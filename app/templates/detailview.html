@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{{ post.title }}</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code&display=swap" rel="stylesheet"/>
+
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+
+  <style>
+    body {
+      background-color: #000;
+      color: #fefefe;
+      font-family: 'Fira Code', monospace;
+      line-height: 1.7;
+      margin: 0;
+      padding: 0;
+      background-image: radial-gradient(rgb(255, 255, 255) 1px, transparent 0), 
+                        radial-gradient(rgb(255, 255, 255) 1px, transparent 0);
+      background-size: 10px 10px;
+      background-position: 0 0, 5px 5px;
+      background-blend-mode: overlay;
+    }
+
+    .binary-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: -1;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 18px,
+        rgba(255, 255, 255, 0.1) 19px
+      );
+      font-size: 12px;
+      color: rgba(0, 255, 0, 0.05);
+      font-family: monospace;
+      white-space: pre;
+      line-height: 1.2;
+      padding: 20px;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background-color: rgba(0, 0, 0, 0.85);
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.05);
+      position: relative;
+      z-index: 1;
+      margin-top: 4rem;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: #fefefe;
+    }
+
+    .meta {
+      font-size: 0.9rem;
+      color: #888;
+      margin-bottom: 2rem;
+    }
+
+    .content {
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      overflow-x: auto;
+      white-space: normal;
+    }
+
+    .content p,
+    .content pre,
+    .content code {
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-top: 2rem;
+      text-decoration: none;
+      color: #fefefe;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    ::selection {
+      background-color: #fefefe;
+      color: #000;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="binary-overlay">
+    welcome to the venooxslocal
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <unistd.h>
+    #include <arpa/inet.h>
+    #include <pthread.h>
+    #include <errno.h>
+        
+    #define MAX_CLIENTS 10
+    #define BUFFER_SIZE 1024
+    #define PORT 8080
+        
+    typedef struct {
+        int socket;
+        struct sockaddr_in address;
+        socklen_t addr_len;
+        int index;
+    } client_t;
+        
+    client_t *clients[MAX_CLIENTS];
+    pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+        
+    void broadcast(const char *message, int sender_index) {
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+    if (clients[i] && clients[i]->index != sender_index) {
+    if (send(clients[i]->socket, message, strlen(message), 0) < 0) {
+        perror("Broadcast error");
+    }
+                }
+            }
+            pthread_mutex_unlock(&clients_mutex);
+        }
+        
+        void *handle_client(void *arg) {
+            char buffer[BUFFER_SIZE];
+            client_t *cli = (client_t *)arg;
+        
+            while (1) {
+                int recv_len = recv(cli->socket, buffer, BUFFER_SIZE, 0);
+                if (recv_len <= 0) {
+                    break;
+                }
+                buffer[recv_len] = '\0';
+                broadcast(buffer, cli->index);
+            }
+        
+            close(cli->socket);
+            pthread_mutex_lock(&clients_mutex);
+            clients[cli->index] = NULL;
+            pthread_mutex_unlock(&clients_mutex);
+            free(cli);
+            pthread_exit(NULL);
+        }
+        
+        int main() {
+            int server_sock;
+            struct sockaddr_in server_addr;
+        
+            server_sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (server_sock < 0) {
+                perror("Socket error");
+                exit(EXIT_FAILURE);
+            }
+        
+            server_addr.sin_family = AF_INET;
+            server_addr.sin_port = htons(PORT);
+            server_addr.sin_addr.s_addr = INADDR_ANY;
+        
+            if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+                perror("Bind error");
+                exit(EXIT_FAILURE);
+            }
+        
+            if (listen(server_sock, MAX_CLIENTS) < 0) {
+                perror("Listen error");
+                exit(EXIT_FAILURE);
+            }
+        
+            printf("[*] Server listening on port %d...\n", PORT);
+        
+            while (1) {
+                client_t *cli = (client_t *)malloc(sizeof(client_t));
+                cli->addr_len = sizeof(cli->address);
+                cli->socket = accept(server_sock, (struct sockaddr *)&cli->address, &cli->addr_len);
+                if (cli->socket < 0) {
+                    perror("Accept error");
+                    free(cli);
+                    continue;
+                }
+        
+                pthread_mutex_lock(&clients_mutex);
+                for (int i = 0; i < MAX_CLIENTS; i++) {
+                    if (!clients[i]) {
+                        cli->index = i;
+                        clients[i] = cli;
+                        pthread_t tid;
+                        pthread_create(&tid, NULL, handle_client, (void *)cli);
+                        pthread_detach(tid);
+                        break;
+                    }
+                }
+                pthread_mutex_unlock(&clients_mutex);
+            }
+        
+            close(server_sock);
+            return 0;
+        }        
+  </div>
+
+  <div class="container">
+    <h1>{{ post.title }}</h1>
+    <div class="meta">Yayınlanma tarihi: {{ post.created_at }}</div>
+    <div class="content">
+      <p>{{ post.content|safe }}</p>
+    </div>
+    <a href="{% url 'index' %}" class="back-link">← Tüm yazılara dön</a>
+  </div>
+
+</body>
+</html>
